@@ -4,18 +4,25 @@ import helmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUI from '@fastify/swagger-ui';
+import websocket from '@fastify/websocket';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { Static, Type } from '@sinclair/typebox';
 import fastify, { FastifyPluginCallback } from 'fastify';
+import { getApiCalls } from './api_calls';
+import { getApiClients } from './api_clients';
 import { getApiIngests } from './api_ingests';
+import { getApiStatus } from './api_status';
 import { ApiProductionsOptions, getApiProductions } from './api_productions';
 import apiReAuth from './api_re_auth';
 import apiShare from './api_share';
 import apiWhip, { ApiWhipOptions } from './api_whip';
 import apiWhep, { ApiWhepOptions } from './api_whep';
+import { CallManager } from './call_manager';
+import { ConnectionManager } from './connection_manager';
 import { DbManager } from './db/interface';
 import { IngestManager } from './ingest_manager';
 import { ProductionManager } from './production_manager';
+import { TalkManager } from './talk_manager';
 
 const HelloWorld = Type.String({
   description: 'The magical words!'
@@ -56,6 +63,9 @@ export interface ApiGeneralOptions {
   dbManager: DbManager;
   productionManager: ProductionManager;
   ingestManager: IngestManager;
+  connectionManager: ConnectionManager;
+  callManager?: CallManager;
+  talkManager?: TalkManager;
 }
 
 export type ApiOptions = ApiGeneralOptions &
@@ -103,6 +113,8 @@ export default async (opts: ApiOptions) => {
   await api.register(fastifyRateLimit, {
     global: false // Only apply to specific routes
   });
+
+  await api.register(websocket);
 
   // register the swagger plugins, it will automagically do magic
   api.register(swagger, {
@@ -177,6 +189,32 @@ export default async (opts: ApiOptions) => {
     dbManager: opts.dbManager,
     ingestManager: opts.ingestManager
   });
+  api.register(getApiClients(), {
+    prefix: 'api/v1',
+    dbManager: opts.dbManager,
+    connectionManager: opts.connectionManager,
+    callManager: opts.callManager,
+    talkManager: opts.talkManager
+  });
+
+  if (opts.callManager) {
+    api.register(getApiCalls(), {
+      prefix: 'api/v1',
+      dbManager: opts.dbManager,
+      connectionManager: opts.connectionManager,
+      callManager: opts.callManager
+    });
+  }
+
+  if (opts.talkManager) {
+    api.register(getApiStatus(), {
+      prefix: 'api/v1',
+      dbManager: opts.dbManager,
+      connectionManager: opts.connectionManager,
+      talkManager: opts.talkManager,
+      callManager: opts.callManager
+    });
+  }
 
   return api;
 };

@@ -1,5 +1,6 @@
 import api from './api';
 import { CoreFunctions } from './api_productions_core_functions';
+import { ConnectionManager } from './connection_manager';
 import { ConnectionQueue } from './connection_queue';
 
 jest.mock('./db/interface', () => ({
@@ -38,7 +39,16 @@ const mockDbManager = {
   getSession: jest.fn().mockResolvedValue(null),
   deleteUserSession: jest.fn().mockResolvedValue(true),
   updateSession: jest.fn().mockResolvedValue(true),
-  getSessionsByQuery: jest.fn().mockResolvedValue([])
+  getSessionsByQuery: jest.fn().mockResolvedValue([]),
+  saveClient: jest.fn().mockResolvedValue(undefined),
+  getClient: jest.fn().mockResolvedValue(null),
+  updateClient: jest.fn().mockResolvedValue(undefined),
+  getOnlineClients: jest.fn().mockResolvedValue([]),
+  saveCall: jest.fn().mockResolvedValue(undefined),
+  getCall: jest.fn().mockResolvedValue(null),
+  updateCall: jest.fn().mockResolvedValue(undefined),
+  getActiveCallsForClient: jest.fn().mockResolvedValue([]),
+  getActiveCallCount: jest.fn().mockResolvedValue(0)
 };
 
 const mockProductionManager = {
@@ -83,6 +93,7 @@ describe('api', () => {
       dbManager: mockDbManager,
       productionManager: mockProductionManager,
       ingestManager: mockIngestManager,
+      connectionManager: new ConnectionManager(),
       coreFunctions: new CoreFunctions(
         mockProductionManager,
         new ConnectionQueue()

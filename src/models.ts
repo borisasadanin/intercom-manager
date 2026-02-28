@@ -400,3 +400,255 @@ export const PatchIngest = Type.Union([
 ]);
 
 export const PatchIngestResponse = Type.Omit(Ingest, ['ipAddress']);
+
+// === M1: Client Registry ===
+
+export const ClientDocument = Type.Object({
+  _id: Type.String({ description: 'UUID v4, same as clientId' }),
+  docType: Type.Literal('client'),
+  name: Type.String(),
+  role: Type.String(),
+  location: Type.String(),
+  isOnline: Type.Boolean(),
+  createdAt: Type.String({ format: 'date-time' }),
+  lastSeenAt: Type.String({ format: 'date-time' })
+});
+export type ClientDocument = Static<typeof ClientDocument>;
+
+export const ClientRegistrationRequest = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: 200 }),
+  role: Type.String({ minLength: 1, maxLength: 100 }),
+  location: Type.String({ minLength: 1, maxLength: 200 }),
+  existingClientId: Type.Optional(Type.String())
+});
+export type ClientRegistrationRequest = Static<typeof ClientRegistrationRequest>;
+
+export const ClientUpdateRequest = Type.Object({
+  name: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+  role: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+  location: Type.Optional(Type.String({ minLength: 1, maxLength: 200 }))
+});
+export type ClientUpdateRequest = Static<typeof ClientUpdateRequest>;
+
+export const ClientRegistrationResponse = Type.Object({
+  clientId: Type.String(),
+  token: Type.String(),
+  name: Type.String(),
+  role: Type.String(),
+  location: Type.String()
+});
+export type ClientRegistrationResponse = Static<
+  typeof ClientRegistrationResponse
+>;
+
+export const ClientProfileResponse = Type.Object({
+  clientId: Type.String(),
+  name: Type.String(),
+  role: Type.String(),
+  location: Type.String(),
+  isOnline: Type.Boolean(),
+  createdAt: Type.String({ format: 'date-time' }),
+  lastSeenAt: Type.String({ format: 'date-time' })
+});
+export type ClientProfileResponse = Static<typeof ClientProfileResponse>;
+
+export const ClientListResponse = Type.Object({
+  clients: Type.Array(
+    Type.Object({
+      clientId: Type.String(),
+      name: Type.String(),
+      role: Type.String(),
+      location: Type.String(),
+      isOnline: Type.Boolean(),
+      lastSeenAt: Type.String({ format: 'date-time' })
+    })
+  )
+});
+export type ClientListResponse = Static<typeof ClientListResponse>;
+
+// WebSocket event types (not TypeBox-validated, used for type safety)
+export interface WsClientInfo {
+  clientId: string;
+  name: string;
+  role: string;
+  location: string;
+}
+
+export interface WsClientListEvent {
+  type: 'client_list';
+  clients: WsClientInfo[];
+}
+
+export interface WsClientConnectedEvent {
+  type: 'client_connected';
+  client: WsClientInfo;
+}
+
+export interface WsClientDisconnectedEvent {
+  type: 'client_disconnected';
+  clientId: string;
+}
+
+export interface WsCallIncomingEvent {
+  type: 'call_incoming';
+  callId: string;
+  caller: WsClientInfo;
+}
+
+export interface WsCallStartedEvent {
+  type: 'call_started';
+  callId: string;
+  callerId: string;
+  calleeId: string;
+  callerName: string;
+  calleeName: string;
+}
+
+export interface WsCallEndedEvent {
+  type: 'call_ended';
+  callId: string;
+  callerId: string;
+  calleeId: string;
+  endedBy: string;
+}
+
+// M3: Talk status WebSocket events (server -> client)
+export interface WsTalkStartEvent {
+  type: 'talk_start';
+  clientId: string;
+  clientName: string;
+  callIds: string[];
+}
+
+export interface WsTalkStopEvent {
+  type: 'talk_stop';
+  clientId: string;
+}
+
+export interface WsActiveTalksEvent {
+  type: 'active_talks';
+  talks: Record<string, string[]>;
+}
+
+// M3: Client-to-server message types
+export interface WsClientTalkStartMessage {
+  type: 'talk_start';
+  callIds: string[];
+}
+
+export interface WsClientTalkStopMessage {
+  type: 'talk_stop';
+}
+
+export type WsClientMessage = WsClientTalkStartMessage | WsClientTalkStopMessage;
+
+export type WsServerEvent =
+  | WsClientListEvent
+  | WsClientConnectedEvent
+  | WsClientDisconnectedEvent
+  | WsCallIncomingEvent
+  | WsCallStartedEvent
+  | WsCallEndedEvent
+  | WsTalkStartEvent
+  | WsTalkStopEvent
+  | WsActiveTalksEvent;
+
+// === M2: Directed P2P Calls ===
+
+export const CallDocument = Type.Object({
+  _id: Type.String({ description: 'UUID v4, same as callId' }),
+  docType: Type.Literal('call'),
+  callerId: Type.String(),
+  calleeId: Type.String(),
+  callerName: Type.String(),
+  calleeName: Type.String(),
+  smbConferenceId: Type.String(),
+  smbUrl: Type.String(),
+  state: Type.Union([
+    Type.Literal('pending'),
+    Type.Literal('active'),
+    Type.Literal('ended')
+  ]),
+  callerEndpointId: Type.String(),
+  calleeEndpointId: Type.Union([Type.String(), Type.Null()]),
+  callerEndpointDescription: Type.Union([SmbEndpointDescription, Type.Null()]),
+  calleeEndpointDescription: Type.Union([SmbEndpointDescription, Type.Null()]),
+  callerConnected: Type.Boolean(),
+  calleeConnected: Type.Boolean(),
+  createdAt: Type.String({ format: 'date-time' }),
+  endedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+  endedBy: Type.Union([Type.String(), Type.Null()])
+});
+export type CallDocument = Static<typeof CallDocument>;
+
+export const CallInitiateRequest = Type.Object({
+  calleeId: Type.String({ minLength: 1, description: 'UUID v4 of the callee' })
+});
+export type CallInitiateRequest = Static<typeof CallInitiateRequest>;
+
+export const CallSdpAnswerRequest = Type.Object({
+  sdpAnswer: Type.String({ minLength: 1, description: 'SDP answer from browser' })
+});
+export type CallSdpAnswerRequest = Static<typeof CallSdpAnswerRequest>;
+
+export const CallInitiateResponse = Type.Object({
+  callId: Type.String(),
+  sdpOffer: Type.String(),
+  callerId: Type.String(),
+  calleeId: Type.String()
+});
+export type CallInitiateResponse = Static<typeof CallInitiateResponse>;
+
+export const CallJoinResponse = Type.Object({
+  callId: Type.String(),
+  sdpOffer: Type.String(),
+  callerId: Type.String(),
+  calleeId: Type.String()
+});
+export type CallJoinResponse = Static<typeof CallJoinResponse>;
+
+export const CallStatusResponse = Type.Object({
+  callId: Type.String(),
+  status: Type.String()
+});
+export type CallStatusResponse = Static<typeof CallStatusResponse>;
+
+export const CallActiveItem = Type.Object({
+  callId: Type.String(),
+  callerId: Type.String(),
+  calleeId: Type.String(),
+  callerName: Type.String(),
+  calleeName: Type.String(),
+  state: Type.Union([Type.Literal('pending'), Type.Literal('active')]),
+  direction: Type.Union([Type.Literal('outgoing'), Type.Literal('incoming')]),
+  createdAt: Type.String({ format: 'date-time' })
+});
+export type CallActiveItem = Static<typeof CallActiveItem>;
+
+export const CallActiveResponse = Type.Object({
+  calls: Type.Array(CallActiveItem)
+});
+export type CallActiveResponse = Static<typeof CallActiveResponse>;
+
+// === M3: Talk Status ===
+
+export const TalkStatusItem = Type.Object({
+  clientId: Type.String(),
+  clientName: Type.String(),
+  callIds: Type.Array(Type.String())
+});
+export type TalkStatusItem = Static<typeof TalkStatusItem>;
+
+export const TalkStatusResponse = Type.Object({
+  talks: Type.Array(TalkStatusItem)
+});
+export type TalkStatusResponse = Static<typeof TalkStatusResponse>;
+
+export const HealthResponse = Type.Object({
+  status: Type.String(),
+  uptime: Type.Number(),
+  clients: Type.Number(),
+  activeCalls: Type.Number(),
+  activeTalkers: Type.Number()
+});
+export type HealthResponse = Static<typeof HealthResponse>;

@@ -54,7 +54,16 @@ const mockDbManager = {
   getSession: jest.fn().mockResolvedValue(null),
   deleteUserSession: jest.fn().mockResolvedValue(true),
   updateSession: jest.fn().mockResolvedValue(true),
-  getSessionsByQuery: jest.fn().mockResolvedValue([])
+  getSessionsByQuery: jest.fn().mockResolvedValue([]),
+  saveClient: jest.fn().mockResolvedValue(undefined),
+  getClient: jest.fn().mockResolvedValue(null),
+  updateClient: jest.fn().mockResolvedValue(undefined),
+  getOnlineClients: jest.fn().mockResolvedValue([]),
+  saveCall: jest.fn().mockResolvedValue(undefined),
+  getCall: jest.fn().mockResolvedValue(null),
+  updateCall: jest.fn().mockResolvedValue(undefined),
+  getActiveCallsForClient: jest.fn().mockResolvedValue([]),
+  getActiveCallCount: jest.fn().mockResolvedValue(0)
 };
 
 const coreFunctions = new CoreFunctions(

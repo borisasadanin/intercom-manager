@@ -1,6 +1,14 @@
 import '../config/load-env';
 import { MongoClient } from 'mongodb';
-import { Ingest, Line, NewIngest, Production, UserSession } from '../models';
+import {
+  CallDocument,
+  ClientDocument,
+  Ingest,
+  Line,
+  NewIngest,
+  Production,
+  UserSession
+} from '../models';
 import { assert } from '../utils';
 import { DbManager } from './interface';
 import { Log } from '../log';
@@ -75,6 +83,37 @@ export class DbManagerMongoDb implements DbManager {
     await safeCreate({ productionId: 1 });
     await safeCreate({ endpointId: 1 });
     await safeCreate({ productionId: 1, endpointId: 1 });
+
+    // Client registry indexes (M1)
+    const clients = db.collection('clients');
+    const safeCreateClients = async (
+      keys: Record<string, 1 | -1>,
+      opts: any = {}
+    ) => {
+      try {
+        await clients.createIndex(keys, opts);
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        if (!/already exists/i.test(msg)) throw err;
+      }
+    };
+    await safeCreateClients({ docType: 1, isOnline: 1 });
+
+    // Call indexes (M2)
+    const calls = db.collection('calls');
+    const safeCreateCalls = async (
+      keys: Record<string, 1 | -1>,
+      opts: any = {}
+    ) => {
+      try {
+        await calls.createIndex(keys, opts);
+      } catch (err: any) {
+        const msg = String(err?.message || '');
+        if (!/already exists/i.test(msg)) throw err;
+      }
+    };
+    await safeCreateCalls({ docType: 1, state: 1, callerId: 1 });
+    await safeCreateCalls({ docType: 1, state: 1, calleeId: 1 });
   }
 
   async disconnect(): Promise<void> {
@@ -289,5 +328,96 @@ export class DbManagerMongoDb implements DbManager {
     delete (mongoQuery as any).lastSeen;
 
     return sessions.find(mongoQuery).toArray();
+  }
+
+  // === M1: Client Registry ===
+
+  async saveClient(client: ClientDocument): Promise<void> {
+    const db = this.client.db();
+    const clients = db.collection('clients');
+    await clients.updateOne(
+      { _id: client._id as any },
+      { $set: client },
+      { upsert: true }
+    );
+  }
+
+  async getClient(clientId: string): Promise<ClientDocument | null> {
+    const db = this.client.db();
+    const doc = await db
+      .collection('clients')
+      .findOne({ _id: clientId as any });
+    return doc as unknown as ClientDocument | null;
+  }
+
+  async updateClient(
+    clientId: string,
+    updates: Partial<ClientDocument>
+  ): Promise<void> {
+    const db = this.client.db();
+    const result = await db
+      .collection('clients')
+      .updateOne(
+        { _id: clientId as any },
+        { $set: { ...updates, lastSeenAt: new Date().toISOString() } }
+      );
+    if (result.matchedCount === 0) {
+      throw new Error(`Client with id "${clientId}" not found`);
+    }
+  }
+
+  async getOnlineClients(): Promise<ClientDocument[]> {
+    const db = this.client.db();
+    const docs = await db
+      .collection('clients')
+      .find({ docType: 'client', isOnline: true })
+      .toArray();
+    return docs as unknown as ClientDocument[];
+  }
+
+  // === M2: P2P Calls ===
+
+  async saveCall(call: CallDocument): Promise<void> {
+    const db = this.client.db();
+    await db.collection('calls').insertOne({ ...call, _id: call._id } as any);
+  }
+
+  async getCall(callId: string): Promise<CallDocument | null> {
+    const db = this.client.db();
+    const doc = await db
+      .collection('calls')
+      .findOne({ _id: callId as any });
+    return doc as unknown as CallDocument | null;
+  }
+
+  async updateCall(
+    callId: string,
+    updates: Partial<CallDocument>
+  ): Promise<void> {
+    const db = this.client.db();
+    const result = await db
+      .collection('calls')
+      .updateOne({ _id: callId as any }, { $set: updates });
+    if (result.matchedCount === 0) {
+      throw new Error(`Call with id "${callId}" not found`);
+    }
+  }
+
+  async getActiveCallCount(): Promise<number> {
+    const db = this.client.db();
+    return db.collection('calls').countDocuments({ state: { $ne: 'ended' } });
+  }
+
+  async getActiveCallsForClient(clientId: string): Promise<CallDocument[]> {
+    const db = this.client.db();
+    const docs = await db
+      .collection('calls')
+      .find({
+        docType: 'call',
+        state: { $ne: 'ended' },
+        $or: [{ callerId: clientId }, { calleeId: clientId }]
+      })
+      .toArray();
+    return docs as unknown as CallDocument[];
   }
 }

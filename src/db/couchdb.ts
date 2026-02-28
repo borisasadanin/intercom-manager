@@ -1,5 +1,13 @@
 import { Log } from '../log';
-import { Ingest, Line, NewIngest, Production, UserSession } from '../models';
+import {
+  CallDocument,
+  ClientDocument,
+  Ingest,
+  Line,
+  NewIngest,
+  Production,
+  UserSession
+} from '../models';
 import { assert } from '../utils';
 import { DbManager } from './interface';
 import nano from 'nano';
@@ -616,5 +624,243 @@ export class DbManagerCouchDb implements DbManager {
         type: 'json'
       })
     );
+
+    // index for getOnlineClients() (M1: Client Registry)
+    await this.withRetry(() =>
+      (this.nanoDb as any).createIndex({
+        index: {
+          fields: ['docType', 'isOnline']
+        },
+        name: 'idx_docType_isOnline',
+        ddoc: 'idx_docType_isOnline',
+        type: 'json'
+      })
+    );
+
+    // Index for caller active calls (M2)
+    await this.withRetry(() =>
+      (this.nanoDb as any).createIndex({
+        index: { fields: ['docType', 'state', 'callerId'] },
+        name: 'idx_call_caller',
+        ddoc: 'idx_call_caller',
+        type: 'json'
+      })
+    );
+
+    // Index for callee active calls (M2)
+    await this.withRetry(() =>
+      (this.nanoDb as any).createIndex({
+        index: { fields: ['docType', 'state', 'calleeId'] },
+        name: 'idx_call_callee',
+        ddoc: 'idx_call_callee',
+        type: 'json'
+      })
+    );
+  }
+
+  // === M1: Client Registry ===
+
+  async saveClient(client: ClientDocument): Promise<void> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    let existingDoc: any;
+    try {
+      existingDoc = await this.withRetry(() =>
+        this.nanoDb!.get(client._id)
+      );
+    } catch (error: any) {
+      if (error.statusCode === 404) {
+        existingDoc = null;
+      } else {
+        throw error;
+      }
+    }
+
+    const doc = existingDoc
+      ? { ...existingDoc, ...client, _id: client._id }
+      : { ...client };
+
+    await this.insertWithRetry(doc);
+  }
+
+  async getClient(clientId: string): Promise<ClientDocument | null> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    try {
+      const doc = await this.withRetry(() => this.nanoDb!.get(clientId));
+      return doc as unknown as ClientDocument;
+    } catch (error: any) {
+      if (error.statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async updateClient(
+    clientId: string,
+    updates: Partial<ClientDocument>
+  ): Promise<void> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    let existingDoc: any;
+    try {
+      existingDoc = await this.withRetry(() => this.nanoDb!.get(clientId));
+    } catch (error: any) {
+      if (error.statusCode === 404) {
+        throw new Error(`Client with id "${clientId}" not found`);
+      }
+      throw error;
+    }
+
+    const updatedDoc = {
+      ...existingDoc,
+      ...updates,
+      _id: clientId,
+      lastSeenAt: new Date().toISOString()
+    };
+
+    await this.insertWithRetry(updatedDoc);
+  }
+
+  async getOnlineClients(): Promise<ClientDocument[]> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    const response = await this.withRetry(() =>
+      this.nanoDb!.find({
+        selector: { docType: 'client', isOnline: true },
+        limit: 10000
+      })
+    );
+    return response.docs as unknown as ClientDocument[];
+  }
+
+  // === M2: P2P Calls ===
+
+  async saveCall(call: CallDocument): Promise<void> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    await this.insertWithRetry({ ...call, _id: call._id });
+  }
+
+  async getCall(callId: string): Promise<CallDocument | null> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    try {
+      const doc = await this.withRetry(() => this.nanoDb!.get(callId));
+      return doc as unknown as CallDocument;
+    } catch (error: any) {
+      if (error.statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async updateCall(
+    callId: string,
+    updates: Partial<CallDocument>
+  ): Promise<void> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    let existingDoc: any;
+    try {
+      existingDoc = await this.withRetry(() => this.nanoDb!.get(callId));
+    } catch (error: any) {
+      if (error.statusCode === 404) {
+        throw new Error(`Call with id "${callId}" not found`);
+      }
+      throw error;
+    }
+
+    const updatedDoc = {
+      ...existingDoc,
+      ...updates,
+      _id: callId
+    };
+
+    await this.insertWithRetry(updatedDoc);
+  }
+
+  async getActiveCallCount(): Promise<number> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    const result = await this.withRetry(() =>
+      this.nanoDb!.find({
+        selector: {
+          docType: 'call',
+          state: { $ne: 'ended' }
+        },
+        fields: ['_id'],
+        limit: 10000
+      })
+    );
+    return result.docs.length;
+  }
+
+  async getActiveCallsForClient(clientId: string): Promise<CallDocument[]> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    // Query calls where client is the caller
+    const callerResponse = await this.withRetry(() =>
+      this.nanoDb!.find({
+        selector: {
+          docType: 'call',
+          state: { $ne: 'ended' },
+          callerId: clientId
+        },
+        limit: 10000
+      })
+    );
+
+    // Query calls where client is the callee
+    const calleeResponse = await this.withRetry(() =>
+      this.nanoDb!.find({
+        selector: {
+          docType: 'call',
+          state: { $ne: 'ended' },
+          calleeId: clientId
+        },
+        limit: 10000
+      })
+    );
+
+    // Deduplicate by _id
+    const callMap = new Map<string, CallDocument>();
+    for (const doc of callerResponse.docs as unknown as CallDocument[]) {
+      callMap.set(doc._id, doc);
+    }
+    for (const doc of calleeResponse.docs as unknown as CallDocument[]) {
+      callMap.set(doc._id, doc);
+    }
+
+    return Array.from(callMap.values());
   }
 }
