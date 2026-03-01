@@ -127,6 +127,34 @@ if (dbUrl.protocol === 'mongodb:' || dbUrl.protocol === 'mongodb+srv:') {
     Log().info(
       `Media Bridge at ${SMB_ADDRESS} (${ENDPOINT_IDLE_TIMEOUT_S}s idle timeout)`
     );
+
+    // Stale heartbeat cleanup: mark clients offline if no WebSocket
+    // connection and lastSeenAt is more than 30 seconds ago.
+    // Runs every 60 seconds to catch heartbeat-only clients that
+    // stopped polling (e.g. browser closed).
+    setInterval(async () => {
+      try {
+        const onlineClients = await dbManager.getOnlineClients();
+        const now = Date.now();
+        for (const client of onlineClients) {
+          const lastSeen = new Date(client.lastSeenAt).getTime();
+          const hasWs =
+            connectionManager.getSocket(client._id) !== undefined;
+          if (!hasWs && now - lastSeen > 30_000) {
+            await dbManager.updateClient(client._id, { isOnline: false });
+            connectionManager.broadcast(
+              { type: 'client_disconnected', clientId: client._id },
+              client._id
+            );
+            Log().info(
+              `Stale cleanup: marked ${client._id} (${client.name}) offline (no WS, lastSeen ${Math.round((now - lastSeen) / 1000)}s ago)`
+            );
+          }
+        }
+      } catch (e) {
+        Log().warn(`Stale cleanup error: ${e}`);
+      }
+    }, 60_000);
   });
 
   const shutdown = async (signal: string) => {

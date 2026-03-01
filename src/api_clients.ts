@@ -43,6 +43,9 @@ function clientKeyGenerator(request: FastifyRequest): string {
  *
  * WebSocket:
  *   GET    /ws?token=JWT       (auth via query param)
+ *
+ * Heartbeat (WS fallback):
+ *   POST   /client/heartbeat   (auth) — marks client online, returns client list
  */
 export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
   return (fastify, opts, done) => {
@@ -310,6 +313,78 @@ export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
         } catch (err) {
           Log().error('PATCH /client/me error:', err);
           reply.code(500).send({ error: 'Internal server error' });
+        }
+      }
+    );
+
+    // ── POST /client/heartbeat (AUTH) ──────────────────────────────────
+    // Fallback for clients that cannot establish a WebSocket connection
+    // (e.g. HTTP/2 proxy issues). Marks the client online, updates
+    // lastSeenAt, and returns the current online client list.
+
+    fastify.post<{
+      Reply:
+        | { clients: Array<{ clientId: string; name: string; role: string; location: string; isOnline: boolean; lastSeenAt: string }> }
+        | { error: string };
+    }>(
+      '/client/heartbeat',
+      {
+        preHandler: requireAuth,
+        config: {
+          rateLimit: {
+            max: 30,
+            timeWindow: '1 minute',
+            keyGenerator: clientKeyGenerator
+          }
+        },
+        schema: {
+          description:
+            'Heartbeat endpoint for clients without WebSocket. Marks client online and returns the online client list.'
+        }
+      },
+      async (request, reply) => {
+        try {
+          const { clientId } = request.client!;
+
+          const client = await dbManager.getClient(clientId);
+          if (!client) {
+            return reply.code(404).send({ error: 'Client not found' });
+          }
+
+          const wasOffline = !client.isOnline;
+
+          // Mark online and update lastSeenAt
+          await dbManager.updateClient(clientId, {
+            isOnline: true,
+            lastSeenAt: new Date().toISOString()
+          });
+
+          // If the client was offline, broadcast client_connected to WS clients
+          if (wasOffline) {
+            connectionManager.broadcast(
+              {
+                type: 'client_connected',
+                client: toClientInfo(client)
+              },
+              clientId
+            );
+          }
+
+          // Return online clients list (same shape as GET /client/list)
+          const onlineClients = await dbManager.getOnlineClients();
+          const clients = onlineClients.map((doc) => ({
+            clientId: doc._id,
+            name: doc.name,
+            role: doc.role,
+            location: doc.location,
+            isOnline: doc.isOnline,
+            lastSeenAt: doc.lastSeenAt
+          }));
+
+          return reply.send({ clients });
+        } catch (err) {
+          Log().error('POST /client/heartbeat error:', err);
+          return reply.code(500).send({ error: 'Heartbeat failed' });
         }
       }
     );
