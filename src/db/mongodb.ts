@@ -406,6 +406,20 @@ export class DbManagerMongoDb implements DbManager {
     return db.collection('calls').countDocuments({ state: { $ne: 'ended' } });
   }
 
+  async markAllClientsOffline(): Promise<void> {
+    const db = this.client.db();
+    const now = new Date().toISOString();
+    const result = await db
+      .collection('clients')
+      .updateMany(
+        { docType: 'client', isOnline: true },
+        { $set: { isOnline: false, lastSeenAt: now } }
+      );
+    Log().info(
+      `Startup cleanup: marked ${result.modifiedCount} client(s) offline in MongoDB`
+    );
+  }
+
   async getActiveCallsForClient(clientId: string): Promise<CallDocument[]> {
     const db = this.client.db();
     const docs = await db

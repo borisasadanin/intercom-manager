@@ -54,4 +54,7 @@ export interface DbManager {
 
   // Call count (M3)
   getActiveCallCount(): Promise<number>;
+
+  // Startup cleanup
+  markAllClientsOffline(): Promise<void>;
 }

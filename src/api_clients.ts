@@ -425,6 +425,7 @@ export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
         // 3. Mark online in DB + send initial state + broadcast
         (async () => {
           try {
+            Log().info(`WS: marking ${clientId} online in DB`);
             await dbManager.updateClient(clientId, { isOnline: true });
 
             // Send client_list to the newly connected client (excluding self)
@@ -438,6 +439,9 @@ export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
                 type: 'client_list' as const,
                 clients: clientList
               })
+            );
+            Log().info(
+              `WS: sent client_list to ${clientId} (${clientList.length} clients)`
             );
 
             // M3: Send active_talks snapshot
@@ -453,6 +457,9 @@ export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
             // Fetch this client's doc to broadcast info to others
             const selfDoc = await dbManager.getClient(clientId);
             if (selfDoc) {
+              Log().info(
+                `WS: broadcasting client_connected for ${clientId} (${selfDoc.name})`
+              );
               connectionManager.broadcast(
                 {
                   type: 'client_connected',
@@ -560,8 +567,13 @@ export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
         });
 
         // 6. Handle close
-        socket.on('close', () => {
+        socket.on('close', (code: number, reason: Buffer) => {
           clearInterval(pingInterval);
+          const reasonStr = reason?.toString() || '';
+
+          Log().info(
+            `WS: socket closed for ${clientId}, code=${code}, reason=${reasonStr}`
+          );
 
           // If this socket was replaced by a newer connection (code 4002),
           // the connectionManager already has the new socket. Skip cleanup.
@@ -573,7 +585,7 @@ export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
             return;
           }
 
-          Log().info(`WS: client ${clientId} disconnected`);
+          Log().info(`WS: client ${clientId} disconnected, starting cleanup`);
           connectionManager.remove(clientId);
 
           // M3: Clean up talk state (before client_disconnected broadcast)
@@ -587,6 +599,7 @@ export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
 
           (async () => {
             try {
+              Log().info(`WS: marking ${clientId} offline in DB`);
               await dbManager.updateClient(clientId, { isOnline: false });
               connectionManager.broadcast({
                 type: 'client_disconnected',

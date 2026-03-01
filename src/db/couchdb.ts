@@ -822,6 +822,41 @@ export class DbManagerCouchDb implements DbManager {
     return result.docs.length;
   }
 
+  async markAllClientsOffline(): Promise<void> {
+    await this.connect();
+    if (!this.nanoDb) {
+      throw new Error('Database not connected');
+    }
+
+    const response = await this.withRetry(() =>
+      this.nanoDb!.find({
+        selector: { docType: 'client', isOnline: true },
+        limit: 10000
+      })
+    );
+
+    const docs = response.docs as any[];
+    if (docs.length === 0) {
+      Log().info('Startup cleanup: no online clients to mark offline');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const updatedDocs = docs.map((doc) => ({
+      ...doc,
+      isOnline: false,
+      lastSeenAt: now
+    }));
+
+    await this.withRetry(() =>
+      this.nanoDb!.bulk({ docs: updatedDocs })
+    );
+
+    Log().info(
+      `Startup cleanup: marked ${docs.length} client(s) offline in CouchDB`
+    );
+  }
+
   async getActiveCallsForClient(clientId: string): Promise<CallDocument[]> {
     await this.connect();
     if (!this.nanoDb) {

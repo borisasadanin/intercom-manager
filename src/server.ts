@@ -40,6 +40,8 @@ if (dbUrl.protocol === 'mongodb:' || dbUrl.protocol === 'mongodb+srv:') {
 
 (async function startServer() {
   await dbManager.connect();
+  await dbManager.markAllClientsOffline();
+  Log().info('Startup cleanup: marked all clients offline');
   const productionManager = new ProductionManager(dbManager);
   await productionManager.load();
 
@@ -129,6 +131,17 @@ if (dbUrl.protocol === 'mongodb:' || dbUrl.protocol === 'mongodb+srv:') {
 
   const shutdown = async (signal: string) => {
     Log().info(`${signal} received, shutting down gracefully`);
+    const connectedIds = connectionManager.getConnectedClientIds();
+    Log().info(
+      `Marking ${connectedIds.length} connected client(s) offline...`
+    );
+    for (const clientId of connectedIds) {
+      try {
+        await dbManager.updateClient(clientId, { isOnline: false });
+      } catch (e) {
+        Log().warn(`Failed to mark ${clientId} offline: ${e}`);
+      }
+    }
     await server.close();
     process.exit(0);
   };

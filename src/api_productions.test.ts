@@ -61,7 +61,8 @@ const mockDbManager = {
   getCall: jest.fn().mockResolvedValue(null),
   updateCall: jest.fn().mockResolvedValue(undefined),
   getActiveCallsForClient: jest.fn().mockResolvedValue([]),
-  getActiveCallCount: jest.fn().mockResolvedValue(0)
+  getActiveCallCount: jest.fn().mockResolvedValue(0),
+  markAllClientsOffline: jest.fn().mockResolvedValue(undefined)
 };
 
 const mockIngestManager = {
