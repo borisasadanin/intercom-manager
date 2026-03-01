@@ -561,8 +561,19 @@ export function getApiClients(): FastifyPluginCallback<ApiClientsOptions> {
 
         // 6. Handle close
         socket.on('close', () => {
-          Log().info(`WS: client ${clientId} disconnected`);
           clearInterval(pingInterval);
+
+          // If this socket was replaced by a newer connection (code 4002),
+          // the connectionManager already has the new socket. Skip cleanup.
+          const currentSocket = connectionManager.getSocket(clientId);
+          if (currentSocket && currentSocket !== socket) {
+            Log().info(
+              `WS: old socket for ${clientId} closed (replaced by new connection), skipping cleanup`
+            );
+            return;
+          }
+
+          Log().info(`WS: client ${clientId} disconnected`);
           connectionManager.remove(clientId);
 
           // M3: Clean up talk state (before client_disconnected broadcast)

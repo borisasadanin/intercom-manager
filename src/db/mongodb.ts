@@ -271,9 +271,7 @@ export class DbManagerMongoDb implements DbManager {
         $setOnInsert: { createdAt: now },
         $set: {
           ...userSession,
-          lastSeenAt: new Date(
-            userSession.lastSeen ?? Date.now()
-          ).toDateString()
+          lastSeenAt: new Date(userSession.lastSeen ?? Date.now())
         }
       },
       { upsert: true }

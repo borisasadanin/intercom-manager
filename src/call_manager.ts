@@ -33,8 +33,23 @@ export class CallManager {
     this.dbManager = opts.dbManager;
     this.connectionManager = opts.connectionManager;
     this.smb = opts.smb;
-    this.smbInstances = opts.smbInstances;
+    // Normalize SMB instance URLs to include /conferences/ path,
+    // matching the pattern in api_productions.ts line 88-91.
+    this.smbInstances = opts.smbInstances.map((instance) => ({
+      ...instance,
+      url: CallManager.normalizeSmbUrl(instance.url)
+    }));
     this.endpointIdleTimeout = opts.endpointIdleTimeout;
+  }
+
+  /**
+   * Normalize an SMB base URL to include /conferences/ path.
+   * The SmbProtocol methods expect the URL to end with /conferences/
+   * (e.g., allocateConference POSTs to smbUrl, allocateEndpoint
+   * concatenates smbUrl + conferenceId + '/' + endpointId).
+   */
+  static normalizeSmbUrl(baseUrl: string): string {
+    return new URL('/conferences/', baseUrl).toString();
   }
 
   /**

@@ -381,11 +381,13 @@ export class ProductionManager extends EventEmitter {
     name: string,
     isWhip = false
   ): Promise<void> {
+    const normalizedProductionId = String(productionId);
+    const normalizedLineId = String(lineId);
     const userSession: UserSession = {
       _id: sessionId,
       smbConferenceId,
-      productionId,
-      lineId,
+      productionId: normalizedProductionId,
+      lineId: normalizedLineId,
       name,
       lastSeen: isWhip ? Date.now() + 20000 : Date.now(),
       isActive: true,
@@ -477,11 +479,19 @@ export class ProductionManager extends EventEmitter {
     lineId: string
   ): Promise<UserResponse[]> {
     const inactiveCutoff = new Date(Date.now() - SESSION_INACTIVE_THRESHOLD);
+    const productionIdCandidates = (() => {
+      const n = Number(productionId);
+      return Number.isNaN(n) ? [productionId] : [productionId, n];
+    })();
+    const lineIdCandidates = (() => {
+      const n = Number(lineId);
+      return Number.isNaN(n) ? [lineId] : [lineId, n];
+    })();
 
     // Retrievs sessions that has not expired
     const dbSessions = await this.dbManager.getSessionsByQuery({
-      productionId,
-      lineId,
+      productionId: { $in: productionIdCandidates } as any,
+      lineId: { $in: lineIdCandidates } as any,
       isExpired: false,
       $or: [{ isWhip: true }, { lastSeenAt: { $gte: inactiveCutoff } as any }]
     } as any);

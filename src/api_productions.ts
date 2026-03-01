@@ -51,6 +51,11 @@ function toUserResponse(doc: any) {
   return out;
 }
 
+function idCandidates(value: string): Array<string | number> {
+  const n = Number(value);
+  return Number.isNaN(n) ? [value] : [value, n];
+}
+
 // To keep participant list order from changing on each fetch of participants
 function sortParticipants(participants: UserResponse[]): UserResponse[] {
   return [...participants].sort((a, b) => {
@@ -189,8 +194,9 @@ const apiProductions: FastifyPluginCallback<ApiProductionsOptions> = (
             production._id.toString()
           );
           // fetching all sessions by querying with array of prod ids
+          const productionIdCandidates = productionIds.flatMap(idCandidates);
           const sessions = await dbManager.getSessionsByQuery({
-            productionId: { $in: productionIds } as any,
+            productionId: { $in: productionIdCandidates } as any,
             isExpired: false
           });
 
@@ -502,8 +508,8 @@ const apiProductions: FastifyPluginCallback<ApiProductionsOptions> = (
         }
 
         const dbSessions = await dbManager.getSessionsByQuery({
-          productionId,
-          lineId,
+          productionId: { $in: idCandidates(productionId) } as any,
+          lineId: { $in: idCandidates(lineId) } as any,
           isExpired: false
         });
 
@@ -936,8 +942,8 @@ const apiProductions: FastifyPluginCallback<ApiProductionsOptions> = (
         const { productionId, lineId } = request.params;
 
         const dbSessions = await dbManager.getSessionsByQuery({
-          productionId,
-          lineId,
+          productionId: { $in: idCandidates(productionId) } as any,
+          lineId: { $in: idCandidates(lineId) } as any,
           isExpired: false
         });
 
