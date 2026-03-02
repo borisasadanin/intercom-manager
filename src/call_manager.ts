@@ -181,7 +181,7 @@ export class CallManager {
       true, // audio
       true, // data
       true, // iceControlling (caller controls)
-      'forwarder',
+      'ssrc-rewrite',
       this.endpointIdleTimeout,
       smbInstance.apiKey
     );
@@ -245,7 +245,7 @@ export class CallManager {
       true, // audio
       true, // data
       false, // NOT iceControlling (callee is controlled)
-      'forwarder',
+      'ssrc-rewrite',
       this.endpointIdleTimeout,
       smbApiKey
     );
